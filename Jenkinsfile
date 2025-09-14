@@ -12,6 +12,11 @@ pipeline {
             defaultValue: false,
             description: 'Skip unit tests'
         )
+        booleanParam(
+            name: 'BUILD_ONLY',
+            defaultValue: false,
+            description: 'Build JAR only without deploying infrastructure'
+        )
     }
     
     environment {
@@ -54,7 +59,10 @@ pipeline {
         
         stage('Deploy to Development') {
             when {
-                expression { params.ENVIRONMENT == 'dev' }
+                allOf {
+                    expression { params.ENVIRONMENT == 'dev' }
+                    expression { !params.BUILD_ONLY }
+                }
             }
             steps {
                 withAWS(credentials: 'aws-encom-dev', region: env.AWS_REGION) {
@@ -71,7 +79,10 @@ pipeline {
         
         stage('Integration Tests') {
             when {
-                expression { params.ENVIRONMENT == 'dev' }
+                allOf {
+                    expression { params.ENVIRONMENT == 'dev' }
+                    expression { !params.BUILD_ONLY }
+                }
             }
             steps {
                 withAWS(credentials: 'aws-encom-dev', region: env.AWS_REGION) {
@@ -96,6 +107,7 @@ pipeline {
             when {
                 allOf {
                     expression { params.ENVIRONMENT == 'prod' }
+                    expression { !params.BUILD_ONLY }
                     branch 'main'
                 }
             }
@@ -116,7 +128,13 @@ pipeline {
     
     post {
         always {
-            cleanWs()
+            script {
+                if (params.BUILD_ONLY) {
+                    echo "Build-only mode: JAR artifacts preserved for infrastructure deployment"
+                } else {
+                    cleanWs()
+                }
+            }
         }
     }
 }
