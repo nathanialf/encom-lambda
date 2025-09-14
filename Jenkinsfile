@@ -41,7 +41,8 @@ pipeline {
                     checkout scm
                 }
                 script {
-                    env.BUILD_VERSION = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
+                    def gitCommit = sh(script: 'cd encom-lambda && git rev-parse HEAD', returnStdout: true).trim()
+                    env.BUILD_VERSION = "${env.BUILD_NUMBER}-${gitCommit.take(7)}"
                 }
             }
         }
