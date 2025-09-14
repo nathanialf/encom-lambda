@@ -126,19 +126,5 @@ pipeline {
         always {
             cleanWs()
         }
-        failure {
-            slackSend(
-                channel: '#encom-alerts',
-                color: 'danger',
-                message: "❌ ${env.PROJECT_NAME} build failed: ${env.BUILD_URL}"
-            )
-        }
-        success {
-            slackSend(
-                channel: '#encom-deployments',
-                color: 'good', 
-                message: "✅ ${env.PROJECT_NAME} deployed to ${params.ENVIRONMENT}: ${env.BUILD_URL}"
-            )
-        }
     }
 }

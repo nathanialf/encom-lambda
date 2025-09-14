@@ -24,7 +24,7 @@ dependencies {
 
 // Create fat JAR with all dependencies using built-in Gradle tasks
 task fatJar(type: Jar, dependsOn: classes) {
-    classifier = 'all'
+    archiveClassifier.set('all')
     
     manifest {
         attributes 'Main-Class': 'com.encom.mapgen.handler.MapGeneratorHandler'
@@ -61,5 +61,5 @@ build.dependsOn fatJar
 // Optional: Create deployment ZIP
 task buildZip(type: Zip, dependsOn: fatJar) {
     from fatJar
-    archiveName = "${project.name}-${project.version}.zip"
+    archiveFileName.set("${project.name}-${project.version}.zip")
 }
