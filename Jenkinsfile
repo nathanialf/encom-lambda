@@ -31,7 +31,9 @@ pipeline {
         
         stage('Test') {
             when {
-                not { params.SKIP_TESTS }
+                not { 
+                    params.SKIP_TESTS == true 
+                }
             }
             steps {
                 sh '''
