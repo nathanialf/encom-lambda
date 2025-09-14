@@ -133,13 +133,8 @@ pipeline {
     
     post {
         always {
-            script {
-                if (params.BUILD_ONLY) {
-                    echo "Build-only mode: JAR artifacts preserved for infrastructure deployment"
-                } else {
-                    cleanWs()
-                }
-            }
+            echo "JAR artifacts preserved in shared workspace for infrastructure deployment"
+            // Never clean workspace to preserve JAR for Infrastructure pipeline
         }
     }
 }

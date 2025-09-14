@@ -3,6 +3,9 @@ apply plugin: 'java'
 group 'com.encom'
 version '1.0.0'
 
+// Override project name to avoid using workspace directory name
+project.archivesBaseName = 'encom-lambda'
+
 sourceCompatibility = 17
 targetCompatibility = 17
 
