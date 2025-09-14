@@ -1,5 +1,9 @@
 pipeline {
-    agent any
+    agent {
+        node {
+            customWorkspace '/var/lib/jenkins/workspace/ENCOM-Shared'
+        }
+    }
     
     parameters {
         choice(
