@@ -6,6 +6,10 @@ pipeline {
         }
     }
     
+    options {
+        skipDefaultCheckout(true)
+    }
+    
     parameters {
         choice(
             name: 'ENVIRONMENT',
@@ -32,7 +36,10 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                // Checkout Lambda code to subdirectory to preserve shared workspace
+                dir('encom-lambda') {
+                    checkout scm
+                }
                 script {
                     env.BUILD_VERSION = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
                 }
@@ -44,21 +51,25 @@ pipeline {
                 expression { return params.SKIP_TESTS == false }
             }
             steps {
-                sh '''
-                    chmod +x gradlew
-                    ./gradlew test
-                '''
-                junit 'build/test-results/test/*.xml'
+                dir('encom-lambda') {
+                    sh '''
+                        chmod +x gradlew
+                        ./gradlew test
+                    '''
+                }
+                junit 'encom-lambda/build/test-results/test/*.xml'
             }
         }
         
         stage('Build') {
             steps {
-                sh '''
-                    chmod +x gradlew
-                    ./gradlew fatJar
-                '''
-                archiveArtifacts artifacts: 'build/libs/*.jar'
+                dir('encom-lambda') {
+                    sh '''
+                        chmod +x gradlew
+                        ./gradlew fatJar
+                    '''
+                }
+                archiveArtifacts artifacts: 'encom-lambda/build/libs/*.jar'
             }
         }
         
@@ -133,8 +144,13 @@ pipeline {
     
     post {
         always {
-            echo "JAR artifacts preserved in shared workspace for infrastructure deployment"
-            // Never clean workspace to preserve JAR for Infrastructure pipeline
+            script {
+                if (params.BUILD_ONLY) {
+                    echo "Build-only mode: JAR artifacts preserved for infrastructure deployment"
+                } else {
+                    cleanWs()
+                }
+            }
         }
     }
 }
