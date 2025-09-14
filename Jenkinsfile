@@ -71,6 +71,50 @@ pipeline {
                     '''
                 }
                 archiveArtifacts artifacts: 'encom-lambda/build/libs/*.jar'
+                
+                // Upload JAR to S3 for Infrastructure pipeline
+                withAWS(credentials: 'aws-encom-dev', region: env.AWS_REGION) {
+                    script {
+                        def bucketName = 'encom-build-artifacts-us-west-1'
+                        def s3Key = "artifacts/lambda/encom-lambda-${env.BUILD_VERSION}.jar"
+                        
+                        // Create S3 bucket if it doesn't exist
+                        sh """
+                            # Create bucket if it doesn't exist (ignore error if it already exists)
+                            aws s3 mb s3://${bucketName} --region ${env.AWS_REGION} || echo "Bucket may already exist"
+                            
+                            # Enable versioning for artifact history
+                            aws s3api put-bucket-versioning \\
+                                --bucket ${bucketName} \\
+                                --versioning-configuration Status=Enabled || echo "Versioning may already be enabled"
+                            
+                            # Set lifecycle policy to manage old versions (optional)
+                            aws s3api put-bucket-lifecycle-configuration \\
+                                --bucket ${bucketName} \\
+                                --lifecycle-configuration '{
+                                    "Rules": [{
+                                        "ID": "DeleteOldVersions",
+                                        "Status": "Enabled",
+                                        "Filter": {"Prefix": "artifacts/"},
+                                        "NoncurrentVersionExpiration": {"NoncurrentDays": 30}
+                                    }]
+                                }' || echo "Lifecycle policy may already be set"
+                        """
+                        
+                        // Upload versioned JAR
+                        s3Upload bucket: bucketName, 
+                                file: 'encom-lambda/build/libs/encom-lambda-1.0.0-all.jar',
+                                key: s3Key
+                        
+                        // Also upload as "latest" for easy access
+                        s3Upload bucket: bucketName,
+                                file: 'encom-lambda/build/libs/encom-lambda-1.0.0-all.jar', 
+                                key: 'artifacts/lambda/encom-lambda-latest.jar'
+                        
+                        echo "JAR uploaded to S3: s3://${bucketName}/${s3Key}"
+                        echo "Latest JAR: s3://${bucketName}/artifacts/lambda/encom-lambda-latest.jar"
+                    }
+                }
             }
         }
         
