@@ -38,15 +38,7 @@ pipeline {
                     chmod +x gradlew
                     ./gradlew test
                 '''
-                publishTestResults testResultsPattern: 'build/test-results/test/*.xml'
-                publishHTML([
-                    allowMissing: false,
-                    alwaysLinkToLastBuild: true,
-                    keepAll: true,
-                    reportDir: 'build/reports/tests/test',
-                    reportFiles: 'index.html',
-                    reportName: 'Test Report'
-                ])
+                junit 'build/test-results/test/*.xml'
             }
         }
         
