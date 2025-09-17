@@ -60,12 +60,13 @@ pipeline {
                 archiveArtifacts artifacts: 'encom-lambda/build/libs/*.jar'
                 
                 // Upload JAR to S3 for Infrastructure pipeline
-                withAWS(credentials: 'aws-encom-dev', region: env.AWS_REGION) {
-                    script {
-                        def bucketName = 'encom-build-artifacts-dev-us-west-1'
-                        def s3Key = "artifacts/lambda/encom-lambda-${env.BUILD_VERSION}.jar"
-                        
-                        echo "Using S3 bucket: ${bucketName} (must be created manually)"
+                script {
+                    def awsCredentials = params.ENVIRONMENT == 'prod' ? 'aws-encom-prod' : 'aws-encom-dev'
+                    def bucketName = "encom-build-artifacts-${params.ENVIRONMENT}-us-west-1"
+                    def s3Key = "artifacts/lambda/encom-lambda-${env.BUILD_VERSION}.jar"
+                    
+                    withAWS(credentials: awsCredentials, region: env.AWS_REGION) {
+                        echo "Using S3 bucket: ${bucketName}"
                         
                         // Upload versioned JAR
                         s3Upload bucket: bucketName,
@@ -84,12 +85,28 @@ pipeline {
             }
         }
         
+        stage('Trigger Infrastructure Deployment') {
+            steps {
+                script {
+                    echo "Triggering infrastructure deployment for ${params.ENVIRONMENT} environment"
+                    
+                    // Trigger the infrastructure job with the same environment parameter
+                    build job: 'ENCOM/ENCOM-Infrastructure',
+                          parameters: [
+                              string(name: 'ENVIRONMENT', value: params.ENVIRONMENT)
+                          ],
+                          wait: false
+                    
+                    echo "Infrastructure deployment triggered successfully"
+                }
+            }
+        }
+        
     }
     
     post {
         always {
-            echo "Lambda build complete. JAR uploaded to S3 and ready for deployment."
-            echo "Run ENCOM-Infrastructure pipeline to deploy infrastructure with latest JAR."
+            echo "Lambda build complete. JAR uploaded to S3 and infrastructure deployment triggered."
             cleanWs()
         }
     }
