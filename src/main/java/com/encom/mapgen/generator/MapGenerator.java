@@ -54,6 +54,9 @@ public class MapGenerator {
             // Growth phase - add hexagons until target reached
             growMap(targetHexagonCount);
             
+            // Post-processing phase - optimize corridor paths
+            postProcessCorridors();
+            
             // Validate connectivity
             validateMap();
             
@@ -338,5 +341,143 @@ public class MapGenerator {
         metadata.setStatistics(statistics);
         
         return metadata;
+    }
+    
+    /**
+     * Post-process corridors to enforce linear path structure
+     */
+    private void postProcessCorridors() {
+        logger.info("Starting corridor post-processing");
+        
+        List<Hexagon> corridors = hexagonMap.values().stream()
+                .filter(hex -> hex.getType() == Hexagon.HexType.CORRIDOR)
+                .collect(Collectors.toList());
+        
+        int connectionsRemoved = 0;
+        
+        for (Hexagon corridor : corridors) {
+            if (corridor.getConnectionCount() > 2) {
+                connectionsRemoved += enforceLinearPath(corridor);
+            }
+        }
+        
+        logger.info("Corridor post-processing completed: {} connections removed from {} corridors", 
+                   connectionsRemoved, corridors.size());
+    }
+    
+    /**
+     * Enforce linear path for a corridor by keeping only the two most aligned connections
+     */
+    private int enforceLinearPath(Hexagon corridor) {
+        List<String> connections = new ArrayList<>(corridor.getConnections());
+        
+        if (connections.size() <= 2) {
+            return 0; // Already linear
+        }
+        
+        // Get coordinates of connected hexagons
+        List<HexCoordinate> connectedCoords = connections.stream()
+                .map(connId -> hexagonMap.get(connId))
+                .filter(Objects::nonNull)
+                .map(hex -> new HexCoordinate(hex.getQ(), hex.getR()))
+                .collect(Collectors.toList());
+        
+        if (connectedCoords.size() <= 2) {
+            return 0;
+        }
+        
+        // Find the pair of connections that forms the most linear path
+        HexCoordinate corridorCoord = new HexCoordinate(corridor.getQ(), corridor.getR());
+        Pair<String> bestPair = findMostLinearConnectionPair(corridorCoord, connections, connectedCoords);
+        
+        // Remove all connections except the best pair
+        Set<String> connectionsToKeep = Set.of(bestPair.first, bestPair.second);
+        List<String> connectionsToRemove = connections.stream()
+                .filter(conn -> !connectionsToKeep.contains(conn))
+                .collect(Collectors.toList());
+        
+        // Remove connections bidirectionally
+        for (String connId : connectionsToRemove) {
+            corridor.getConnections().remove(connId);
+            Hexagon connectedHex = hexagonMap.get(connId);
+            if (connectedHex != null) {
+                connectedHex.getConnections().remove(corridor.getId());
+            }
+        }
+        
+        return connectionsToRemove.size();
+    }
+    
+    /**
+     * Find the pair of connections that forms the most linear path through the corridor
+     */
+    private Pair<String> findMostLinearConnectionPair(HexCoordinate center, 
+                                                      List<String> connectionIds, 
+                                                      List<HexCoordinate> connectionCoords) {
+        double bestLinearity = -1;
+        Pair<String> bestPair = new Pair<>(connectionIds.get(0), connectionIds.get(1));
+        
+        // Try all pairs of connections
+        for (int i = 0; i < connectionIds.size(); i++) {
+            for (int j = i + 1; j < connectionIds.size(); j++) {
+                HexCoordinate coord1 = connectionCoords.get(i);
+                HexCoordinate coord2 = connectionCoords.get(j);
+                
+                // Calculate linearity score (how close to 180 degrees the angle is)
+                double linearity = calculateLinearity(coord1, center, coord2);
+                
+                if (linearity > bestLinearity) {
+                    bestLinearity = linearity;
+                    bestPair = new Pair<>(connectionIds.get(i), connectionIds.get(j));
+                }
+            }
+        }
+        
+        return bestPair;
+    }
+    
+    /**
+     * Calculate linearity score for three points (higher score = more linear)
+     * Returns a value between 0 (90 degrees) and 1 (180 degrees)
+     */
+    private double calculateLinearity(HexCoordinate p1, HexCoordinate center, HexCoordinate p2) {
+        // Vector from center to p1
+        double v1x = p1.getQ() - center.getQ();
+        double v1y = p1.getR() - center.getR();
+        
+        // Vector from center to p2
+        double v2x = p2.getQ() - center.getQ();
+        double v2y = p2.getR() - center.getR();
+        
+        // Calculate dot product and magnitudes
+        double dotProduct = v1x * v2x + v1y * v2y;
+        double mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
+        double mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
+        
+        if (mag1 == 0 || mag2 == 0) {
+            return 0;
+        }
+        
+        // Calculate cosine of angle between vectors
+        double cosAngle = dotProduct / (mag1 * mag2);
+        
+        // Clamp to valid range for acos
+        cosAngle = Math.max(-1.0, Math.min(1.0, cosAngle));
+        
+        // Convert to linearity score: -1 (opposite directions) = 1.0, 0 (perpendicular) = 0.5, 1 (same direction) = 0.0
+        return (1.0 - cosAngle) / 2.0;
+    }
+    
+    /**
+     * Simple pair class for holding two values
+     */
+    private static class Pair<T> {
+        final T first;
+        final T second;
+        
+        Pair(T first, T second) {
+            this.first = first;
+            this.second = second;
+        }
     }
 }
