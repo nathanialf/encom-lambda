@@ -90,14 +90,21 @@ pipeline {
                 script {
                     echo "Triggering infrastructure deployment for ${params.ENVIRONMENT} environment"
                     
-                    // Trigger the infrastructure job with the same environment parameter
-                    build job: 'ENCOM/ENCOM-Infrastructure',
-                          parameters: [
-                              string(name: 'ENVIRONMENT', value: params.ENVIRONMENT)
-                          ],
-                          wait: false
-                    
-                    echo "Infrastructure deployment triggered successfully"
+                    try {
+                        // Trigger the infrastructure job with the same environment parameter
+                        build job: 'ENCOM/ENCOM-Infrastructure',
+                              parameters: [
+                                  string(name: 'ENVIRONMENT', value: params.ENVIRONMENT),
+                                  string(name: 'ACTION', value: 'apply')
+                              ],
+                              wait: false
+                        
+                        echo "Infrastructure deployment triggered successfully"
+                    } catch (Exception e) {
+                        echo "Warning: Could not trigger infrastructure job automatically: ${e.message}"
+                        echo "Please manually run ENCOM-Infrastructure job with ENVIRONMENT=${params.ENVIRONMENT} and ACTION=apply"
+                        // Don't fail the build for trigger issues
+                    }
                 }
             }
         }
