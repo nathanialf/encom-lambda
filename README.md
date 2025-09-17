@@ -9,8 +9,8 @@ AWS Lambda function for generating connected hexagonal maps using organic growth
 - **Connected Maps**: Guarantees all hexagons are reachable (no islands)
 - **Configurable**: Customizable corridor ratios, room sizes, and generation options
 - **Performance Optimized**: Generates 200 hexagons in <1 second
-- **Corridor Post-Processing**: Linear path enforcement prevents corridor clustering
-- **Comprehensive Testing**: 58 unit tests with 100% pass rate
+- **Corridor Post-Processing**: Connectivity-preserving algorithm prioritizes 2 connections, allows 3 for branching
+- **Comprehensive Testing**: 71 unit tests with 100% pass rate
 
 ## Architecture
 
@@ -97,10 +97,10 @@ gradle buildZip
 ```
 
 ### Testing
-- **Unit Tests**: 58 comprehensive tests covering all components
+- **Unit Tests**: 71 comprehensive tests covering all components
 - **Integration Tests**: End-to-end API validation
 - **Performance Tests**: Large map generation (200+ hexagons)
-- **Post-Processing Tests**: Corridor linearity and connectivity validation
+- **Post-Processing Tests**: Connectivity-preserving corridor optimization
 
 ### Deployment
 The fat JAR (`build/libs/encom-lambda-1.0.0-all.jar`) contains all dependencies and can be deployed directly to AWS Lambda.
@@ -122,7 +122,7 @@ Uses **axial coordinates** (q, r) with flat-top hexagon orientation:
 2. **Frontier Growth**: Maintain frontier set of expandable positions
 3. **Structure Selection**: Choose corridor vs room based on ratio
 4. **Organic Placement**: Generate connected structures with natural variation
-5. **Post-Processing**: Enforce linear corridor paths to prevent clustering
+5. **Post-Processing**: Connectivity-preserving corridor optimization (prioritize 2 connections, allow 3 for branching)
 6. **Validation**: Ensure connectivity and structural integrity
 
 ### Performance

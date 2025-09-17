@@ -344,7 +344,8 @@ public class MapGenerator {
     }
     
     /**
-     * Post-process corridors to enforce linear path structure
+     * Post-process corridors to reduce clustering while preserving connectivity
+     * Allows up to 3 connections occasionally for branching
      */
     private void postProcessCorridors() {
         logger.info("Starting corridor post-processing");
@@ -354,25 +355,43 @@ public class MapGenerator {
                 .collect(Collectors.toList());
         
         int connectionsRemoved = 0;
+        int corridorsProcessed = 0;
+        
+        // Sort corridors by connection count (highest first) to process worst cases first
+        corridors.sort((a, b) -> Integer.compare(b.getConnectionCount(), a.getConnectionCount()));
         
         for (Hexagon corridor : corridors) {
-            if (corridor.getConnectionCount() > 2) {
-                connectionsRemoved += enforceLinearPath(corridor);
+            int connectionCount = corridor.getConnectionCount();
+            
+            // Process corridors with 3+ connections (prioritize 2, allow 3 if needed)
+            if (connectionCount >= 3) {
+                int beforeCount = corridor.getConnectionCount();
+                int removed = reduceCorridorConnections(corridor);
+                int afterCount = corridor.getConnectionCount();
+                
+                if (removed > 0) {
+                    logger.debug("Processed corridor {}: {} -> {} connections ({} removed)", 
+                               corridor.getId(), beforeCount, afterCount, removed);
+                }
+                
+                connectionsRemoved += removed;
+                corridorsProcessed++;
             }
         }
         
-        logger.info("Corridor post-processing completed: {} connections removed from {} corridors", 
-                   connectionsRemoved, corridors.size());
+        logger.info("Corridor post-processing completed: {} connections removed from {} corridors out of {} total", 
+                   connectionsRemoved, corridorsProcessed, corridors.size());
     }
     
     /**
-     * Enforce linear path for a corridor by keeping only the two most aligned connections
+     * Reduce corridor connections while preserving connectivity
+     * Priority: reduce to 2 connections, allow 3 if needed for connectivity
      */
-    private int enforceLinearPath(Hexagon corridor) {
+    private int reduceCorridorConnections(Hexagon corridor) {
         List<String> connections = new ArrayList<>(corridor.getConnections());
         
         if (connections.size() <= 2) {
-            return 0; // Already linear
+            return 0; // Already at ideal target
         }
         
         // Get coordinates of connected hexagons
@@ -382,58 +401,143 @@ public class MapGenerator {
                 .map(hex -> new HexCoordinate(hex.getQ(), hex.getR()))
                 .collect(Collectors.toList());
         
-        if (connectedCoords.size() <= 2) {
+        if (connectedCoords.size() <= 3) {
             return 0;
         }
         
-        // Find the pair of connections that forms the most linear path
+        // Find connections to remove one by one, checking connectivity after each removal
+        int connectionsRemoved = 0;
         HexCoordinate corridorCoord = new HexCoordinate(corridor.getQ(), corridor.getR());
-        Pair<String> bestPair = findMostLinearConnectionPair(corridorCoord, connections, connectedCoords);
         
-        // Remove all connections except the best pair
-        Set<String> connectionsToKeep = Set.of(bestPair.first, bestPair.second);
-        List<String> connectionsToRemove = connections.stream()
-                .filter(conn -> !connectionsToKeep.contains(conn))
-                .collect(Collectors.toList());
+        // Calculate linearity scores for all connections
+        List<ConnectionScore> connectionScores = new ArrayList<>();
+        for (int i = 0; i < connections.size(); i++) {
+            String connId = connections.get(i);
+            HexCoordinate connCoord = connectedCoords.get(i);
+            double score = calculateConnectionImportance(corridorCoord, connCoord, connections, connectedCoords);
+            connectionScores.add(new ConnectionScore(connId, score));
+        }
         
-        // Remove connections bidirectionally
-        for (String connId : connectionsToRemove) {
-            corridor.getConnections().remove(connId);
+        // Sort by importance (lowest first - these are candidates for removal)
+        connectionScores.sort((a, b) -> Double.compare(a.score, b.score));
+        
+        // Try to remove connections starting with least important, checking connectivity
+        // Priority: get down to 2 connections, but allow 3 if needed for connectivity
+        for (ConnectionScore connScore : connectionScores) {
+            // First pass: try to get to 2 connections
+            if (corridor.getConnectionCount() <= 2) {
+                break; // Reached ideal target
+            }
+            
+            // Second priority: allow up to 3 connections but no more
+            if (corridor.getConnectionCount() == 3) {
+                // Only remove if we can get to 2 without breaking connectivity
+                // This is more aggressive for the 3->2 transition
+            }
+            
+            String connId = connScore.connectionId;
+            
+            // Test removal - temporarily remove and check connectivity
+            corridor.removeConnection(connId);
             Hexagon connectedHex = hexagonMap.get(connId);
             if (connectedHex != null) {
-                connectedHex.getConnections().remove(corridor.getId());
+                connectedHex.removeConnection(corridor.getId());
+            }
+            
+            // Check if map is still connected
+            if (isMapConnected()) {
+                // Good removal - keep it removed
+                connectionsRemoved++;
+                logger.debug("Safely removed connection {} from corridor {}", connId, corridor.getId());
+            } else {
+                // Bad removal - restore the connection
+                corridor.addConnection(connId);
+                if (connectedHex != null) {
+                    connectedHex.addConnection(corridor.getId());
+                }
+                logger.debug("Restored connection {} to corridor {} (needed for connectivity)", connId, corridor.getId());
             }
         }
         
-        return connectionsToRemove.size();
+        return connectionsRemoved;
     }
     
     /**
-     * Find the pair of connections that forms the most linear path through the corridor
+     * Helper class to store connection with its importance score
      */
-    private Pair<String> findMostLinearConnectionPair(HexCoordinate center, 
-                                                      List<String> connectionIds, 
-                                                      List<HexCoordinate> connectionCoords) {
-        double bestLinearity = -1;
-        Pair<String> bestPair = new Pair<>(connectionIds.get(0), connectionIds.get(1));
+    private static class ConnectionScore {
+        String connectionId;
+        double score;
         
-        // Try all pairs of connections
-        for (int i = 0; i < connectionIds.size(); i++) {
-            for (int j = i + 1; j < connectionIds.size(); j++) {
-                HexCoordinate coord1 = connectionCoords.get(i);
-                HexCoordinate coord2 = connectionCoords.get(j);
-                
-                // Calculate linearity score (how close to 180 degrees the angle is)
-                double linearity = calculateLinearity(coord1, center, coord2);
-                
-                if (linearity > bestLinearity) {
-                    bestLinearity = linearity;
-                    bestPair = new Pair<>(connectionIds.get(i), connectionIds.get(j));
+        ConnectionScore(String connectionId, double score) {
+            this.connectionId = connectionId;
+            this.score = score;
+        }
+    }
+    
+    /**
+     * Calculate importance score for a connection (lower = less important = candidate for removal)
+     * Prioritizes linear paths for corridor flow
+     */
+    private double calculateConnectionImportance(HexCoordinate center, HexCoordinate target,
+                                               List<String> allConnections, List<HexCoordinate> allCoords) {
+        // Base score starts at 0
+        double importance = 0.0;
+        
+        // Factor 1: Linearity with other connections (heavily weighted for straight corridors)
+        double maxLinearity = 0.0;
+        for (int i = 0; i < allCoords.size(); i++) {
+            HexCoordinate other = allCoords.get(i);
+            if (!other.equals(target)) {
+                double linearity = calculateLinearity(target, center, other);
+                maxLinearity = Math.max(maxLinearity, linearity);
+            }
+        }
+        importance += maxLinearity * 3.0; // Increased weight for linearity
+        
+        // Factor 2: Distance (hexagonal grid distance)
+        double distance = center.distanceTo(target);
+        importance += 1.0 / (distance + 1.0);
+        
+        // Factor 3: Small random factor to break ties deterministically
+        importance += seedManager.nextDouble() * 0.05; // Reduced randomness
+        
+        return importance;
+    }
+    
+    /**
+     * Check if the map is still fully connected using BFS
+     */
+    private boolean isMapConnected() {
+        List<Hexagon> allHexagons = new ArrayList<>(hexagonMap.values());
+        if (allHexagons.isEmpty()) {
+            return true;
+        }
+        
+        // Start BFS from first hexagon
+        Set<String> visited = new HashSet<>();
+        Queue<String> queue = new LinkedList<>();
+        
+        String startId = allHexagons.get(0).getId();
+        queue.offer(startId);
+        visited.add(startId);
+        
+        while (!queue.isEmpty()) {
+            String currentId = queue.poll();
+            Hexagon current = hexagonMap.get(currentId);
+            
+            if (current != null) {
+                for (String connId : current.getConnections()) {
+                    if (!visited.contains(connId)) {
+                        visited.add(connId);
+                        queue.offer(connId);
+                    }
                 }
             }
         }
         
-        return bestPair;
+        // Check if all hexagons were visited
+        return visited.size() == allHexagons.size();
     }
     
     /**
@@ -464,8 +568,9 @@ public class MapGenerator {
         // Clamp to valid range for acos
         cosAngle = Math.max(-1.0, Math.min(1.0, cosAngle));
         
-        // Convert to linearity score: -1 (opposite directions) = 1.0, 0 (perpendicular) = 0.5, 1 (same direction) = 0.0
-        return (1.0 - cosAngle) / 2.0;
+        // Convert to linearity score: -1 (opposite directions, 180deg) = 1.0, 0 (perpendicular, 90deg) = 0.0
+        // We want opposite directions to have the highest score (most linear)
+        return -cosAngle; // -1 becomes 1.0 (best linearity), 0 stays 0.0, 1 becomes -1.0 (worst)
     }
     
     /**
