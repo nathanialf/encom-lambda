@@ -47,8 +47,8 @@ public class GenerationRequest {
      * Validate the request parameters
      */
     public void validate() {
-        if (hexagonCount < 1 || hexagonCount > 200) {
-            throw new IllegalArgumentException("Hexagon count must be between 1 and 200");
+        if (hexagonCount < 1 || hexagonCount > 1000) {
+            throw new IllegalArgumentException("Hexagon count must be between 1 and 1000");
         }
         
         if (options != null) {

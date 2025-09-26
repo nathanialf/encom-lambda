@@ -49,7 +49,7 @@ x-api-key: YOUR_API_KEY_HERE  # Production only
 ```json
 {
   "seed": "string",           // Optional: Deterministic seed
-  "hexagonCount": "integer",  // Required: Number of hexagons (1-200)
+  "hexagonCount": "integer",  // Required: Number of hexagons (1-1000)
   "options": {                // Optional: Generation parameters
     "corridorRatio": "float",      // Optional: Corridor vs room ratio (0.0-1.0)
     "roomSizeMin": "integer",      // Optional: Minimum room size (1-10)
@@ -64,7 +64,7 @@ x-api-key: YOUR_API_KEY_HERE  # Production only
 | Parameter | Type | Required | Default | Range | Description |
 |-----------|------|----------|---------|-------|-------------|
 | `seed` | string | No | Random | Any | Deterministic seed for map generation |
-| `hexagonCount` | integer | Yes | - | 1-200 | Number of hexagons to generate |
+| `hexagonCount` | integer | Yes | - | 1-1000 | Number of hexagons to generate |
 | `options.corridorRatio` | float | No | 0.7 | 0.0-1.0 | Ratio of corridors to rooms (0.7 = 70% corridors) |
 | `options.roomSizeMin` | integer | No | 4 | 1-10 | Minimum hexagons per room |
 | `options.roomSizeMax` | integer | No | 8 | roomSizeMin-20 | Maximum hexagons per room |
@@ -272,16 +272,16 @@ The API uses **axial coordinates** for hexagon positioning:
 
 ### Coordinate Examples
 ```
-  (-1,-1)   (0,-1)   (1,-1)
+     (0,-1)   (1,-1)
 (-1, 0)   (0, 0)   (1, 0)
-  (-1,1)    (0,1)    (1,1)
+     (0,1)    (1,1)
 ```
 
 ### Neighboring Hexagons
-Each hexagon can have up to 6 neighbors at coordinates:
-- `(q+1, r)`, `(q-1, r)` - Horizontal neighbors
-- `(q, r+1)`, `(q, r-1)` - Diagonal neighbors  
-- `(q+1, r-1)`, `(q-1, r+1)` - Other diagonal neighbors
+Each hexagon has exactly 6 neighbors at coordinates:
+- `(q+1, r)`, `(q-1, r)` - East/West neighbors
+- `(q, r+1)`, `(q, r-1)` - Southeast/Northwest neighbors  
+- `(q+1, r-1)`, `(q-1, r+1)` - Northeast/Southwest neighbors
 
 ## Algorithm Details
 
