@@ -44,6 +44,9 @@ locals {
   # API Gateway configuration  
   api_name = "${local.project_name}-api-${local.environment}"
   
+  # API Domain configuration
+  api_domain_name = "encom-api-dev.riperoni.com"
+  
   common_tags = {
     Project     = local.project_name
     Environment = local.environment
@@ -72,6 +75,15 @@ module "lambda" {
   tags = local.common_tags
 }
 
+# Route53 Module for API subdomain
+module "route53" {
+  source = "../../modules/route53"
+  
+  domain_name = local.api_domain_name
+  
+  tags = local.common_tags
+}
+
 # API Gateway Module
 module "api_gateway" {
   source = "../../modules/api-gateway"
@@ -80,6 +92,10 @@ module "api_gateway" {
   api_description   = "ENCOM Hexagonal Map Generation API - Development"
   stage_name        = local.environment
   lambda_invoke_arn = module.lambda.alias_invoke_arn
+  
+  # Custom domain configuration
+  domain_name      = local.api_domain_name
+  hosted_zone_id   = module.route53.zone_id
   
   enable_api_key        = var.enable_api_key
   quota_limit          = var.api_quota_limit

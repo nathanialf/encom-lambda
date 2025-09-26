@@ -53,3 +53,18 @@ output "log_group_name" {
   description = "CloudWatch log group name for API Gateway"
   value       = aws_cloudwatch_log_group.api_gateway_logs.name
 }
+
+output "custom_domain_name" {
+  description = "Custom domain name for the API (if configured)"
+  value       = var.domain_name != "" ? aws_api_gateway_domain_name.api_domain[0].domain_name : null
+}
+
+output "custom_domain_cloudfront_name" {
+  description = "CloudFront domain name for custom domain (if configured)"
+  value       = var.domain_name != "" ? aws_api_gateway_domain_name.api_domain[0].cloudfront_domain_name : null
+}
+
+output "certificate_arn" {
+  description = "ACM certificate ARN (if custom domain configured)"
+  value       = var.domain_name != "" ? aws_acm_certificate.api_cert[0].arn : null
+}

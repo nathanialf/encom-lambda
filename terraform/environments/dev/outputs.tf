@@ -37,3 +37,28 @@ output "api_gateway_log_group" {
   description = "API Gateway CloudWatch log group name"
   value       = module.api_gateway.log_group_name
 }
+
+output "custom_domain_name" {
+  description = "Custom domain name for the API"
+  value       = module.api_gateway.custom_domain_name
+}
+
+output "custom_domain_endpoint" {
+  description = "Custom domain API endpoint URL for map generation"
+  value       = module.api_gateway.custom_domain_name != null ? "https://${module.api_gateway.custom_domain_name}/api/v1/map/generate" : null
+}
+
+output "hosted_zone_id" {
+  description = "Route53 hosted zone ID"
+  value       = module.route53.zone_id
+}
+
+output "name_servers" {
+  description = "Name servers for the hosted zone"
+  value       = module.route53.name_servers
+}
+
+output "certificate_arn" {
+  description = "ACM certificate ARN"
+  value       = module.api_gateway.certificate_arn
+}

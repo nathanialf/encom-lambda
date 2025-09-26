@@ -11,9 +11,10 @@ AWS Lambda function for generating connected hexagonal maps using organic growth
 ├─────────────────────────────────┤  ├─────────────────────────────────┤
 │                                 │  │                                 │
 │  ┌─────────────────────┐       │  │  ┌─────────────────────┐       │
-│  │   CloudWatch Logs   │       │  │  │   CloudWatch Logs   │       │
-│  │  /aws/lambda/...    │       │  │  │  /aws/lambda/...    │       │
-│  │  /aws/apigateway/.. │       │  │  │  /aws/apigateway/.. │       │
+│  │  Custom Domain      │       │  │  │  Custom Domain      │       │
+│  │encom-api-dev        │       │  │  │ encom-api           │       │
+│  │.riperoni.com        │       │  │  │ .riperoni.com       │       │
+│  │(Route53 + ACM)      │       │  │  │ (Route53 + ACM)     │       │
 │  └─────────────────────┘       │  │  └─────────────────────┘       │
 │            │                   │  │            │                   │
 │  ┌─────────────────────┐       │  │  ┌─────────────────────┐       │
@@ -31,8 +32,9 @@ AWS Lambda function for generating connected hexagonal maps using organic growth
 │  └─────────────────────┘       │  │  └─────────────────────┘       │
 │            │                   │  │            │                   │
 │  ┌─────────────────────┐       │  │  ┌─────────────────────┐       │
-│  │   IAM Role          │       │  │  │   IAM Role          │       │
-│  │ ...-dev-role        │       │  │  │ ...-prod-role       │       │
+│  │   CloudWatch Logs   │       │  │  │   CloudWatch Logs   │       │
+│  │  /aws/lambda/...    │       │  │  │  /aws/lambda/...    │       │
+│  │  /aws/apigateway/.. │       │  │  │  /aws/apigateway/.. │       │
 │  └─────────────────────┘       │  │  └─────────────────────┘       │
 │                                 │  │                                 │
 └─────────────────────────────────┘  └─────────────────────────────────┘
@@ -69,16 +71,20 @@ AWS Lambda function for generating connected hexagonal maps using organic growth
 ## API Endpoints
 
 ### Development Environment
-- **Endpoint**: `https://kxt2knsej3.execute-api.us-west-1.amazonaws.com/dev/api/v1/map/generate`
+- **Custom Domain**: `https://encom-api-dev.riperoni.com/api/v1/map/generate`
+- **Direct Endpoint**: `https://kxt2knsej3.execute-api.us-west-1.amazonaws.com/dev/api/v1/map/generate`
 - **Authentication**: None required
 - **CORS**: Enabled for all origins
 - **Rate Limiting**: Basic throttling
+- **SSL Certificate**: Auto-managed ACM certificate with DNS validation
 
 ### Production Environment  
-- **Endpoint**: `https://3901ff1oz1.execute-api.us-west-1.amazonaws.com/prod/api/v1/map/generate`
+- **Custom Domain**: `https://encom-api.riperoni.com/api/v1/map/generate`
+- **Direct Endpoint**: `https://3901ff1oz1.execute-api.us-west-1.amazonaws.com/prod/api/v1/map/generate`
 - **Authentication**: API Key required (`x-api-key` header)
 - **CORS**: Enabled for all origins
 - **Rate Limiting**: 100 requests/second, 10,000 requests/month per key
+- **SSL Certificate**: Auto-managed ACM certificate with DNS validation
 
 ## Features
 
@@ -143,7 +149,7 @@ AWS Lambda function for generating connected hexagonal maps using organic growth
 #### Development (No Authentication)
 ```bash
 curl -X POST \
-  "https://kxt2knsej3.execute-api.us-west-1.amazonaws.com/dev/api/v1/map/generate" \
+  "https://encom-api-dev.riperoni.com/api/v1/map/generate" \
   -H "Content-Type: application/json" \
   -d '{"seed": "test123", "hexagonCount": 10}'
 ```
@@ -151,7 +157,7 @@ curl -X POST \
 #### Production (API Key Required)
 ```bash
 curl -X POST \
-  "https://3901ff1oz1.execute-api.us-west-1.amazonaws.com/prod/api/v1/map/generate" \
+  "https://encom-api.riperoni.com/api/v1/map/generate" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY_HERE" \
   -d '{"seed": "prod123", "hexagonCount": 10}'
@@ -165,7 +171,8 @@ terraform/
 ├── bootstrap/              # State bucket creation
 ├── modules/
 │   ├── lambda/             # Lambda function module
-│   └── api-gateway/        # API Gateway module  
+│   ├── api-gateway/        # API Gateway with custom domain support
+│   └── route53/            # DNS hosted zone management
 └── environments/
     ├── dev/                # Development environment
     └── prod/               # Production environment

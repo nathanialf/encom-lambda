@@ -60,3 +60,15 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "domain_name" {
+  description = "Custom domain name for the API (optional)"
+  type        = string
+  default     = ""
+}
+
+variable "hosted_zone_id" {
+  description = "Route53 hosted zone ID for the domain (required if domain_name is set)"
+  type        = string
+  default     = ""
+}
