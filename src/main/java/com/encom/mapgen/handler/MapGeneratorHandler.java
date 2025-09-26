@@ -36,7 +36,7 @@ public class MapGeneratorHandler implements RequestHandler<APIGatewayProxyReques
         this.defaultHexagonCount = Integer.parseInt(
                 System.getenv().getOrDefault("DEFAULT_HEXAGON_COUNT", "50"));
         this.maxHexagonCount = Integer.parseInt(
-                System.getenv().getOrDefault("MAX_HEXAGON_COUNT", "200"));
+                System.getenv().getOrDefault("MAX_HEXAGON_COUNT", "1000"));
         
         logger.info("MapGeneratorHandler initialized - default: {}, max: {}", 
                    defaultHexagonCount, maxHexagonCount);
