@@ -8,6 +8,12 @@ terraform {
   }
 }
 
+# Provider for us-east-1 (required for ACM certificates used with API Gateway)
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
+
 # API Gateway REST API
 resource "aws_api_gateway_rest_api" "api" {
   name        = var.api_name
@@ -233,8 +239,11 @@ resource "aws_cloudwatch_log_group" "api_gateway_logs" {
 data "aws_region" "current" {}
 
 # ACM Certificate (only if domain_name is provided)
+# Must be in us-east-1 for API Gateway edge-optimized domains
 resource "aws_acm_certificate" "api_cert" {
   count = var.domain_name != "" ? 1 : 0
+  
+  provider = aws.us_east_1
   
   domain_name       = var.domain_name
   validation_method = "DNS"
@@ -249,6 +258,8 @@ resource "aws_acm_certificate" "api_cert" {
 # Certificate validation
 resource "aws_acm_certificate_validation" "api_cert" {
   count = var.domain_name != "" ? 1 : 0
+  
+  provider = aws.us_east_1
   
   certificate_arn         = aws_acm_certificate.api_cert[0].arn
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
