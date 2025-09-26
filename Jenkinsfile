@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        node {
-            label 'any'
-            customWorkspace '/var/lib/jenkins/workspace/ENCOM-Shared'
-        }
-    }
+    agent any
     
     options {
         skipDefaultCheckout(true)
@@ -14,96 +9,152 @@ pipeline {
         choice(
             name: 'ENVIRONMENT',
             choices: ['dev', 'prod'],
-            description: 'Target environment for artifact upload'
+            description: 'Target environment for deployment'
+        )
+        choice(
+            name: 'ACTION',
+            choices: ['bootstrap', 'plan', 'apply'],
+            description: 'Terraform action to perform'
         )
     }
     
     environment {
         AWS_REGION = 'us-west-1'
         PROJECT_NAME = 'encom-lambda'
+        TF_IN_AUTOMATION = 'true'
+    }
+    
+    tools {
+        terraform 'Terraform-1.5'
     }
     
     stages {
         stage('Checkout') {
             steps {
-                // Checkout Lambda code to subdirectory to preserve shared workspace
-                dir('encom-lambda') {
-                    checkout scm
-                }
+                checkout scm
                 script {
-                    def gitCommit = sh(script: 'cd encom-lambda && git rev-parse HEAD', returnStdout: true).trim()
+                    def gitCommit = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                     env.BUILD_VERSION = "${env.BUILD_NUMBER}-${gitCommit.take(7)}"
                 }
             }
         }
         
-        stage('Test') {
+        stage('Test & Build JAR') {
+            when {
+                expression { params.ACTION == 'plan' || params.ACTION == 'apply' }
+            }
             steps {
-                dir('encom-lambda') {
-                    sh '''
-                        chmod +x gradlew
-                        ./gradlew test
-                    '''
-                }
-                junit 'encom-lambda/build/test-results/test/*.xml'
+                sh '''
+                    echo "Running tests..."
+                    chmod +x gradlew
+                    ./gradlew test
+                    
+                    echo "Building JAR..."
+                    ./gradlew fatJar
+                '''
+                junit 'build/test-results/test/*.xml'
+                archiveArtifacts artifacts: 'build/libs/*.jar'
             }
         }
         
-        stage('Build') {
+        stage('Terraform Bootstrap') {
+            when {
+                expression { params.ACTION == 'bootstrap' }
+            }
             steps {
-                dir('encom-lambda') {
-                    sh '''
-                        chmod +x gradlew
-                        ./gradlew fatJar
-                    '''
-                }
-                archiveArtifacts artifacts: 'encom-lambda/build/libs/*.jar'
-                
-                // Upload JAR to S3 for Infrastructure pipeline
                 script {
                     def awsCredentials = params.ENVIRONMENT == 'prod' ? 'aws-encom-prod' : 'aws-encom-dev'
-                    def bucketName = "encom-build-artifacts-${params.ENVIRONMENT}-us-west-1"
-                    def s3Key = "artifacts/lambda/encom-lambda-${env.BUILD_VERSION}.jar"
                     
                     withAWS(credentials: awsCredentials, region: env.AWS_REGION) {
-                        echo "Using S3 bucket: ${bucketName}"
-                        
-                        // Upload versioned JAR
-                        s3Upload bucket: bucketName,
-                                file: 'encom-lambda/build/libs/encom-lambda-1.0.0-all.jar',
-                                path: s3Key
-                        
-                        // Also upload as "latest" for easy access
-                        s3Upload bucket: bucketName,
-                                file: 'encom-lambda/build/libs/encom-lambda-1.0.0-all.jar',
-                                path: 'artifacts/lambda/encom-lambda-latest.jar'
-                        
-                        echo "JAR uploaded to S3: s3://${bucketName}/${s3Key}"
-                        echo "Latest JAR: s3://${bucketName}/artifacts/lambda/encom-lambda-latest.jar"
+                        dir("terraform/bootstrap") {
+                            sh """
+                                echo "Bootstrapping Terraform state backend for ${params.ENVIRONMENT}..."
+                                terraform init
+                                terraform plan -var="environment=${params.ENVIRONMENT}" -var="region=${env.AWS_REGION}" -out=bootstrap-plan
+                                terraform apply bootstrap-plan
+                                echo "Bootstrap completed successfully"
+                            """
+                        }
                     }
                 }
             }
         }
         
-        stage('Trigger Infrastructure Deployment') {
+        stage('Terraform Init') {
+            when {
+                expression { params.ACTION == 'plan' || params.ACTION == 'apply' }
+            }
             steps {
                 script {
-                    echo "Triggering infrastructure deployment for ${params.ENVIRONMENT} environment"
+                    def awsCredentials = params.ENVIRONMENT == 'prod' ? 'aws-encom-prod' : 'aws-encom-dev'
                     
-                    try {
-                        // Trigger the infrastructure job with the same environment parameter
-                        build job: 'ENCOM/ENCOM-Infrastructure',
-                              parameters: [
-                                  string(name: 'ENVIRONMENT', value: params.ENVIRONMENT),
-                                  string(name: 'ACTION', value: 'apply')
-                              ],
-                              wait: false
-                        
-                        echo "Infrastructure deployment triggered successfully"
-                    } catch (Exception e) {
-                        echo "Warning: Could not trigger infrastructure job automatically: ${e.message}"
-                        echo "Please manually run ENCOM-Infrastructure job with ENVIRONMENT=${params.ENVIRONMENT} and ACTION=apply"
-                        // Don't fail the build for trigger issues
+                    withAWS(credentials: awsCredentials, region: env.AWS_REGION) {
+                        dir("terraform/environments/${params.ENVIRONMENT}") {
+                            sh '''
+                                echo "Initializing Terraform..."
+                                terraform init
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Terraform Validate') {
+            when {
+                expression { params.ACTION == 'plan' || params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    def awsCredentials = params.ENVIRONMENT == 'prod' ? 'aws-encom-prod' : 'aws-encom-dev'
+                    
+                    withAWS(credentials: awsCredentials, region: env.AWS_REGION) {
+                        dir("terraform/environments/${params.ENVIRONMENT}") {
+                            sh '''
+                                echo "Validating Terraform configuration..."
+                                terraform validate
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Terraform Plan') {
+            when {
+                expression { params.ACTION == 'plan' || params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    def awsCredentials = params.ENVIRONMENT == 'prod' ? 'aws-encom-prod' : 'aws-encom-dev'
+                    
+                    withAWS(credentials: awsCredentials, region: env.AWS_REGION) {
+                        dir("terraform/environments/${params.ENVIRONMENT}") {
+                            sh '''
+                                echo "Planning Terraform changes..."
+                                terraform plan -var-file=terraform.tfvars -out=tfplan
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Terraform Apply') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    def awsCredentials = params.ENVIRONMENT == 'prod' ? 'aws-encom-prod' : 'aws-encom-dev'
+                    
+                    withAWS(credentials: awsCredentials, region: env.AWS_REGION) {
+                        dir("terraform/environments/${params.ENVIRONMENT}") {
+                            sh '''
+                                echo "Applying Terraform changes..."
+                                terraform apply tfplan
+                            '''
+                        }
                     }
                 }
             }
@@ -113,8 +164,55 @@ pipeline {
     
     post {
         always {
-            echo "Lambda build complete. JAR uploaded to S3 and infrastructure deployment triggered."
-            cleanWs()
+            script {
+                if (params.ACTION == 'bootstrap') {
+                    echo "Bootstrap complete! State bucket created for ${params.ENVIRONMENT} environment."
+                    echo "Next steps:"
+                    echo "1. Run import process using terraform/import-resources.md"
+                    echo "2. Run ACTION=plan to validate configuration"
+                    echo "3. Run ACTION=apply to deploy Lambda function"
+                } else if (params.ACTION == 'apply') {
+                    echo "Deployment complete!"
+                    echo "Environment: ${params.ENVIRONMENT}"
+                    
+                    // Get Lambda function info if deployment was successful
+                    try {
+                        def awsCredentials = params.ENVIRONMENT == 'prod' ? 'aws-encom-prod' : 'aws-encom-dev'
+                        withAWS(credentials: awsCredentials, region: env.AWS_REGION) {
+                            dir("terraform/environments/${params.ENVIRONMENT}") {
+                                def apiEndpoint = sh(
+                                    script: 'terraform output -raw api_gateway_endpoint',
+                                    returnStdout: true
+                                ).trim()
+                                echo "API Endpoint: ${apiEndpoint}"
+                                
+                                def lambdaName = sh(
+                                    script: 'terraform output -raw lambda_function_name',
+                                    returnStdout: true
+                                ).trim()
+                                echo "Lambda Function: ${lambdaName}"
+                            }
+                        }
+                    } catch (Exception e) {
+                        echo "Could not retrieve deployment info: ${e.message}"
+                    }
+                } else {
+                    echo "Terraform plan completed. Review the plan and run with ACTION=apply to deploy."
+                }
+                
+                // Cleanup
+                try {
+                    cleanWs()
+                } catch (Exception e) {
+                    echo "Warning: Workspace cleanup failed: ${e.message}"
+                }
+            }
+        }
+        failure {
+            echo "Pipeline failed! Check the logs above for errors."
+        }
+        success {
+            echo "Pipeline completed successfully!"
         }
     }
 }
